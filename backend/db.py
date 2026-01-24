@@ -65,6 +65,15 @@ def init_db(db_file: str, schema_path: str) -> None:
         if not column_exists("projects", col):
             conn.execute(ddl)
 
+    # reports new columns
+    for col, ddl in [
+        ("start_time", "ALTER TABLE reports ADD COLUMN start_time TEXT;"),
+        ("end_time", "ALTER TABLE reports ADD COLUMN end_time TEXT;"),
+        ("break_minutes", "ALTER TABLE reports ADD COLUMN break_minutes INTEGER;"),
+    ]:
+        if not column_exists("reports", col):
+            conn.execute(ddl)
+
     # archived status: can't change CHECK easily; in dev we accept without enforcing via app logic.
 
     conn.commit()

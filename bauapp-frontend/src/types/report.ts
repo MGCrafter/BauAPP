@@ -9,6 +9,9 @@ export interface Report {
   createdAt: string;
   weather?: string;
   workersPresent?: number;
+  startTime?: string | null;
+  endTime?: string | null;
+  breakMinutes?: number | null;
 }
 
 export interface ReportFormData {
@@ -18,6 +21,9 @@ export interface ReportFormData {
   quickActions?: string[];
   weather?: string;
   workersPresent?: number;
+  startTime?: string | null;
+  endTime?: string | null;
+  breakMinutes?: number | null;
 }
 
 export const QUICK_ACTIONS = [

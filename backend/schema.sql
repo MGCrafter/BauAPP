@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS reports (
     quick_actions TEXT,
     weather TEXT,
     workers_present INTEGER,
+    start_time TEXT,
+    end_time TEXT,
+    break_minutes INTEGER,
     created_at TEXT NOT NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

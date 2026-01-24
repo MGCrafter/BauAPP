@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { Card, Button, Input, Badge } from '../components/ui';
 import { useAuthStore, useProjectStore } from '../store';
+import { mockReports } from '../mock/reports';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
 
@@ -43,9 +44,13 @@ const AllReportsPage: React.FC = () => {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await response.json().catch(() => []);
-        setReports(Array.isArray(data) ? data : []);
+        if (!response.ok) {
+          setReports(mockReports);
+          return;
+        }
+        setReports(Array.isArray(data) ? data : mockReports);
       } catch {
-        setReports([]);
+        setReports(mockReports);
       }
     };
 

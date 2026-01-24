@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, LogOut, User, Settings, Home, Shield, Clock } from 'lucide-react';
-import { useAuthStore } from '../../store';
+import { useAuthStore, useUIStore } from '../../store';
 
 interface HeaderProps {
   title?: string;
@@ -10,53 +10,30 @@ interface HeaderProps {
   onBack?: () => void;
 }
 
-// Mock Notifications
-const mockNotifications = [
-  {
-    id: '1',
-    title: 'Neuer Bericht',
-    message: 'Max Huber hat einen Bericht für "Einfamilienhaus Sonnenberg" erstellt',
-    time: 'vor 5 Min.',
-    read: false,
-  },
-  {
-    id: '2',
-    title: 'Projekt aktualisiert',
-    message: 'Das Projekt "Dachsanierung Altbau" wurde auf "Aktiv" gesetzt',
-    time: 'vor 1 Std.',
-    read: false,
-  },
-  {
-    id: '3',
-    title: 'Material geliefert',
-    message: 'Material für Bürogebäude Techpark wurde geliefert',
-    time: 'vor 3 Std.',
-    read: true,
-  },
-];
-
 export const Header: React.FC<HeaderProps> = ({ title, showBack, onBack }) => {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
+  const {
+    notifications,
+    markNotificationRead,
+    markAllNotificationsRead,
+  } = useUIStore();
   const [showMenu, setShowMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState(mockNotifications);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const visibleNotifications = useMemo(
+    () =>
+      notifications.filter(
+        (n) => n.audience === 'all' || (n.audience === 'admin' && user?.role === 'admin')
+      ),
+    [notifications, user?.role]
+  );
+
+  const unreadCount = visibleNotifications.filter((n) => !n.read).length;
 
   const handleLogout = () => {
     logout();
     navigate('/login');
-  };
-
-  const markAsRead = (id: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    );
-  };
-
-  const markAllAsRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   };
 
   return (
@@ -130,7 +107,7 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack, onBack }) => {
                       <h3 className="font-semibold text-gray-900 dark:text-white">Benachrichtigungen</h3>
                       {unreadCount > 0 && (
                         <button
-                          onClick={markAllAsRead}
+                          onClick={markAllNotificationsRead}
                           className="text-xs text-primary-600 hover:text-primary-700"
                         >
                           Alle gelesen
@@ -139,11 +116,11 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack, onBack }) => {
                     </div>
 
                     <div className="max-h-80 overflow-y-auto">
-                      {notifications.length > 0 ? (
-                        notifications.map((notification) => (
+                      {visibleNotifications.length > 0 ? (
+                        visibleNotifications.map((notification) => (
                           <div
                             key={notification.id}
-                            onClick={() => markAsRead(notification.id)}
+                            onClick={() => markNotificationRead(notification.id)}
                             className={`px-4 py-3 border-b border-gray-50 dark:border-gray-700 last:border-0 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
                               !notification.read ? 'bg-primary-50/50 dark:bg-primary-900/30' : ''
                             }`}

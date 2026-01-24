@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Calendar,
@@ -10,9 +10,18 @@ import {
   Filter,
 } from 'lucide-react';
 import { Card, Button, Badge, Modal } from '../components/ui';
-import { useUIStore } from '../store';
-import { mockUsers } from '../mock';
+import { useAuthStore, useProjectStore, useUIStore } from '../store';
+import { mockReports } from '../mock/reports';
 import { cn } from '../utils/cn';
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
+
+interface Worker {
+  id: string;
+  name: string;
+  username: string;
+  avatar: string;
+}
 
 interface TimeEntry {
   id: string;
@@ -21,67 +30,104 @@ interface TimeEntry {
   userName: string;
   projectId: string;
   projectName: string;
-  startTime: string;
-  endTime: string;
-  breakMinutes: number;
+  startTime?: string;
+  endTime?: string;
+  breakMinutes?: number | null;
   notes: string;
 }
 
-// Mock Stundenzettel-Daten für alle Mitarbeiter
-const generateMockTimeEntries = (): TimeEntry[] => {
-  const today = new Date();
-  const entries: TimeEntry[] = [];
-
-  const workers = mockUsers.filter(u => u.role === 'worker');
-  const projects = [
-    { id: 'proj-1', name: 'Einfamilienhaus Sonnenberg' },
-    { id: 'proj-2', name: 'Dachsanierung Altbau' },
-    { id: 'proj-3', name: 'Bürogebäude Techpark' },
-  ];
-
-  // Generiere Einträge für die letzten 14 Tage
-  for (let dayOffset = 0; dayOffset < 14; dayOffset++) {
-    const date = new Date(today);
-    date.setDate(date.getDate() - dayOffset);
-    const dateStr = date.toISOString().split('T')[0];
-
-    // Wochenenden überspringen
-    if (date.getDay() === 0 || date.getDay() === 6) continue;
-
-    workers.forEach((worker, workerIndex) => {
-      // 80% Chance dass ein Mitarbeiter an diesem Tag gearbeitet hat
-      if (Math.random() > 0.2) {
-        const project = projects[(workerIndex + dayOffset) % projects.length];
-        const startHour = 6 + Math.floor(Math.random() * 2); // 6-7 Uhr
-        const workHours = 7 + Math.floor(Math.random() * 3); // 7-9 Stunden
-
-        entries.push({
-          id: `entry-${worker.id}-${dateStr}`,
-          date: dateStr,
-          userId: worker.id,
-          userName: worker.name,
-          projectId: project.id,
-          projectName: project.name,
-          startTime: `0${startHour}:00`.slice(-5),
-          endTime: `${startHour + workHours}:00`,
-          breakMinutes: 30,
-          notes: dayOffset === 0 ? 'Heute gearbeitet' : '',
-        });
-      }
-    });
-  }
-
-  return entries.sort((a, b) => b.date.localeCompare(a.date));
-};
-
 const AdminTimesheetPage: React.FC = () => {
   const { addToast } = useUIStore();
-  const [entries] = useState<TimeEntry[]>(generateMockTimeEntries());
+  const { token } = useAuthStore();
+  const { projects, loadProjects } = useProjectStore();
+  const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [selectedWeek, setSelectedWeek] = useState(new Date());
   const [selectedWorker, setSelectedWorker] = useState<string>('all');
   const [showWorkerDetail, setShowWorkerDetail] = useState<string | null>(null);
 
-  const workers = mockUsers.filter(u => u.role === 'worker');
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
+
+  useEffect(() => {
+    const loadReports = async () => {
+      if (!token) {
+        const fallback = mockReports.map((report) => ({
+          id: `report-${report.id}`,
+          date: report.createdAt.split('T')[0],
+          userId: report.userId,
+          userName: report.userName,
+          projectId: report.projectId,
+          projectName:
+            projects.find((p) => p.id === report.projectId)?.name || report.projectId,
+          startTime: report.startTime || '',
+          endTime: report.endTime || '',
+          breakMinutes: report.breakMinutes ?? null,
+          notes: report.text,
+        }));
+        setEntries(fallback);
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/api/reports`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json().catch(() => []);
+        const list = Array.isArray(data) ? data : mockReports;
+        const mapped = list.map((report) => ({
+          id: `report-${report.id}`,
+          date: report.createdAt.split('T')[0],
+          userId: report.userId,
+          userName: report.userName,
+          projectId: report.projectId,
+          projectName:
+            report.projectName ||
+            projects.find((p) => p.id === report.projectId)?.name ||
+            report.projectId,
+          startTime: report.startTime || '',
+          endTime: report.endTime || '',
+          breakMinutes: report.breakMinutes ?? null,
+          notes: report.text,
+        }));
+        setEntries(mapped);
+      } catch {
+        const fallback = mockReports.map((report) => ({
+          id: `report-${report.id}`,
+          date: report.createdAt.split('T')[0],
+          userId: report.userId,
+          userName: report.userName,
+          projectId: report.projectId,
+          projectName:
+            projects.find((p) => p.id === report.projectId)?.name || report.projectId,
+          startTime: report.startTime || '',
+          endTime: report.endTime || '',
+          breakMinutes: report.breakMinutes ?? null,
+          notes: report.text,
+        }));
+        setEntries(fallback);
+      }
+    };
+
+    loadReports();
+  }, [token, projects]);
+
+  const workers = useMemo<Worker[]>(() => {
+    const map = new Map<string, Worker>();
+    entries.forEach((entry) => {
+      if (!map.has(entry.userId)) {
+        const name = entry.userName || 'Unbekannt';
+        const username = name.toLowerCase().replace(/\s+/g, '.');
+        map.set(entry.userId, {
+          id: entry.userId,
+          name,
+          username,
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [entries]);
 
   // Get week dates
   const getWeekDates = (date: Date) => {
@@ -103,11 +149,16 @@ const AdminTimesheetPage: React.FC = () => {
 
   // Calculate hours
   const calculateHours = (entry: TimeEntry): number => {
+    if (!entry.startTime || !entry.endTime) return 0;
     const [startH, startM] = entry.startTime.split(':').map(Number);
     const [endH, endM] = entry.endTime.split(':').map(Number);
+    if (Number.isNaN(startH) || Number.isNaN(startM) || Number.isNaN(endH) || Number.isNaN(endM)) {
+      return 0;
+    }
     const startMinutes = startH * 60 + startM;
     const endMinutes = endH * 60 + endM;
-    const totalMinutes = endMinutes - startMinutes - entry.breakMinutes;
+    const pause = entry.breakMinutes ?? 0;
+    const totalMinutes = endMinutes - startMinutes - pause;
     return Math.max(0, totalMinutes / 60);
   };
 
@@ -141,7 +192,7 @@ const AdminTimesheetPage: React.FC = () => {
     });
 
     return stats;
-  }, [weekDates, entries]);
+  }, [weekDates, entries, workers]);
 
   // Total weekly hours
   const totalWeeklyHours = useMemo(() => {
@@ -257,7 +308,7 @@ const AdminTimesheetPage: React.FC = () => {
         {workers
           .filter(w => selectedWorker === 'all' || w.id === selectedWorker)
           .map((worker, index) => {
-            const stats = workerWeeklyStats[worker.id];
+            const stats = workerWeeklyStats[worker.id] || { hours: 0, days: 0, entries: [] };
 
             return (
               <motion.div
@@ -340,7 +391,7 @@ const AdminTimesheetPage: React.FC = () => {
               {workers
                 .filter(w => selectedWorker === 'all' || w.id === selectedWorker)
                 .map(worker => {
-                  const stats = workerWeeklyStats[worker.id];
+                  const stats = workerWeeklyStats[worker.id] || { hours: 0, days: 0, entries: [] };
 
                   return (
                     <tr key={worker.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
@@ -431,7 +482,7 @@ const AdminTimesheetPage: React.FC = () => {
                   {workers.find(w => w.id === showWorkerDetail)?.name}
                 </p>
                 <p className="text-gray-500 dark:text-gray-400">
-                  {workerWeeklyStats[showWorkerDetail]?.hours.toFixed(1)} Stunden diese Woche
+                  {(workerWeeklyStats[showWorkerDetail]?.hours || 0).toFixed(1)} Stunden diese Woche
                 </p>
               </div>
             </div>
@@ -452,7 +503,9 @@ const AdminTimesheetPage: React.FC = () => {
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       {new Date(entry.date).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}
                       {' · '}
-                      {entry.startTime} - {entry.endTime}
+                      {(entry.startTime && entry.endTime)
+                        ? `${entry.startTime} - ${entry.endTime}`
+                        : '—'}
                     </p>
                   </div>
                   <Badge variant="success">

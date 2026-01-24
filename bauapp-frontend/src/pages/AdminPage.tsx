@@ -23,7 +23,7 @@ const AdminPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const { projects, loadProjects, createProject, isLoading } = useProjectStore();
-  const { addToast } = useUIStore();
+  const { addToast, addNotification } = useUIStore();
 
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [newProject, setNewProject] = useState({
@@ -112,6 +112,11 @@ const AdminPage: React.FC = () => {
       });
 
       addToast({ message: 'Projekt erstellt!', type: 'success' });
+      addNotification({
+        title: 'Neues Projekt',
+        message: `Projekt "${newProject.name}" wurde erstellt`,
+        audience: 'all',
+      });
       setShowNewProjectModal(false);
       setNewProject({ name: '', address: '', customerName: '', description: '', imageUrl: '' });
       setProjectImagePreview(null);

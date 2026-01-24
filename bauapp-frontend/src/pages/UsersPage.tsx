@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Search,
@@ -14,13 +14,14 @@ import {
   KeyRound,
 } from 'lucide-react';
 import { Card, Button, Input, Badge, Modal } from '../components/ui';
-import { useUIStore } from '../store';
-import { mockUsers, mockProjects } from '../mock';
+import { useUIStore, useProjectStore } from '../store';
+import { mockUsers } from '../mock';
 import { cn } from '../utils/cn';
 import type { User } from '../types';
 
 const UsersPage: React.FC = () => {
   const { addToast } = useUIStore();
+  const { projects, loadProjects } = useProjectStore();
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -39,6 +40,10 @@ const UsersPage: React.FC = () => {
   const [editPassword, setEditPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showEditPassword, setShowEditPassword] = useState(false);
+
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
 
   const workers = users.filter((u) => u.role === 'worker');
   const admins = users.filter((u) => u.role === 'admin');
@@ -139,7 +144,7 @@ const UsersPage: React.FC = () => {
   const getProjectsForUser = (userId: string) => {
     const user = users.find((u) => u.id === userId);
     if (!user?.assignedProjects) return [];
-    return mockProjects.filter((p) => user.assignedProjects?.includes(p.id));
+    return projects.filter((p) => user.assignedProjects?.includes(p.id));
   };
 
   return (
@@ -557,7 +562,7 @@ const UsersPage: React.FC = () => {
             </p>
 
             <div className="space-y-2 max-h-[300px] overflow-y-auto">
-              {mockProjects.map((project) => {
+              {projects.map((project) => {
                 const isAssigned = editingUser.assignedProjects?.includes(project.id);
 
                 return (
@@ -598,6 +603,11 @@ const UsersPage: React.FC = () => {
                   </div>
                 );
               })}
+              {projects.length === 0 && (
+                <div className="text-center text-sm text-gray-500 dark:text-gray-400 py-6">
+                  Keine Projekte vorhanden
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3 pt-4">

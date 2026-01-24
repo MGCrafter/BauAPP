@@ -5,14 +5,16 @@ import {
   MapPin,
   Cloud,
   Users,
+  Clock,
   ChevronLeft,
   ChevronRight,
   X,
   Download,
 } from 'lucide-react';
 import { Card, Button, Badge, Spinner } from '../components/ui';
-import { useAuthStore } from '../store';
+import { useAuthStore, useUIStore } from '../store';
 import type { Report } from '../types';
+import { mockReports } from '../mock/reports';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
 
@@ -25,6 +27,7 @@ const ReportDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { token, user } = useAuthStore();
+  const { addToast } = useUIStore();
 
   const [report, setReport] = useState<ReportDetail | null>(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
@@ -41,13 +44,15 @@ const ReportDetailPage: React.FC = () => {
         });
         const data = await response.json().catch(() => null);
         if (!response.ok || !data) {
-          setReport(null);
+          const fallback = mockReports.find((r) => r.id === id) || null;
+          setReport(fallback);
           setIsLoading(false);
           return;
         }
         setReport(data);
       } catch {
-        setReport(null);
+        const fallback = mockReports.find((r) => r.id === id) || null;
+        setReport(fallback);
       } finally {
         setIsLoading(false);
       }
@@ -95,6 +100,14 @@ const ReportDetailPage: React.FC = () => {
     });
   };
 
+  const timeLabel = () => {
+    if (!report.startTime && !report.endTime && report.breakMinutes == null) return '';
+    const start = report.startTime || '—';
+    const end = report.endTime || '—';
+    const pause = report.breakMinutes != null ? `${report.breakMinutes} Min.` : '—';
+    return `${start} - ${end} (Pause ${pause})`;
+  };
+
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto">
       {/* Header */}
@@ -138,6 +151,12 @@ const ReportDetailPage: React.FC = () => {
             <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
               <Users className="w-4 h-4 text-gray-400" />
               <span>{report.workersPresent} Arbeiter vor Ort</span>
+            </div>
+          )}
+          {timeLabel() && (
+            <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 col-span-2">
+              <Clock className="w-4 h-4 text-gray-400" />
+              <span>{timeLabel()}</span>
             </div>
           )}
           {project && (
@@ -272,10 +291,11 @@ const ReportDetailPage: React.FC = () => {
             setIsDownloading(true);
             try {
               const response = await fetch(
-                `${API_BASE}/api/projects/${report.projectId}/export-pdf`,
+                `${API_BASE}/api/reports/${report.id}/export-pdf`,
                 { headers: { Authorization: `Bearer ${token}` } }
               );
               if (!response.ok) {
+                addToast({ message: 'PDF-Export fehlgeschlagen', type: 'error' });
                 setIsDownloading(false);
                 return;
               }
@@ -283,7 +303,7 @@ const ReportDetailPage: React.FC = () => {
               const url = window.URL.createObjectURL(blob);
               const link = document.createElement('a');
               link.href = url;
-              link.download = `Projekt_${project?.name || report.projectId}.pdf`;
+              link.download = `Bericht_${project?.name || report.projectId}.pdf`;
               document.body.appendChild(link);
               link.click();
               link.remove();

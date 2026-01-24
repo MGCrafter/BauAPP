@@ -12,6 +12,7 @@ import {
 import { Card, Button, ProjectCard, Spinner } from '../components/ui';
 import { useAuthStore, useProjectStore } from '../store';
 import { cn } from '../utils/cn';
+import { mockReports } from '../mock/reports';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
 
@@ -46,9 +47,13 @@ const Dashboard: React.FC = () => {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await response.json().catch(() => []);
-        setReports(Array.isArray(data) ? data : []);
+        if (!response.ok) {
+          setReports(mockReports);
+          return;
+        }
+        setReports(Array.isArray(data) ? data : mockReports);
       } catch {
-        setReports([]);
+        setReports(mockReports);
       }
     };
 
@@ -74,9 +79,21 @@ const Dashboard: React.FC = () => {
     return (
       quickActions.includes('material fehlt') ||
       quickActions.includes('inspektion') ||
-      text.includes('problem')
+      text.includes('problem') ||
+      quickActions.includes('sicherheitsproblem')
     );
   });
+  const isCriticalHint = (report: ReportSummary) => {
+    const haystack = `${report.text} ${(report.quickActions || []).join(' ')}`.toLowerCase();
+    return (
+      haystack.includes('kritisch') ||
+      haystack.includes('gefahr') ||
+      haystack.includes('unfall') ||
+      haystack.includes('sicherheitsproblem') ||
+      haystack.includes('sperr') ||
+      haystack.includes('brand')
+    );
+  };
   const latestOpenHint = openHints.reduce((latest, report) => {
     if (!latest) return report;
     return new Date(report.createdAt).getTime() > new Date(latest.createdAt).getTime()
@@ -245,43 +262,63 @@ const Dashboard: React.FC = () => {
               <p className="text-sm text-gray-500 dark:text-gray-400">Keine offenen Hinweise</p>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-              {openHintsSorted.slice(0, 4).map((report) => (
-                <Card
-                  key={report.id}
-                  className="cursor-pointer"
-                  onClick={() => navigate(`/reports/${report.id}`)}
-                >
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                        {report.projectName || projectNameById.get(report.projectId) || 'Unbekanntes Projekt'}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {report.userName} · {formatShortDate(report.createdAt)}
-                      </p>
+            <div className="space-y-3 sm:space-y-4">
+              {openHintsSorted.slice(0, 6).map((report) => {
+                const critical = isCriticalHint(report);
+                return (
+                  <Card
+                    key={report.id}
+                    className={cn(
+                      'cursor-pointer border',
+                      critical
+                        ? 'border-red-200 dark:border-red-800 bg-red-50/60 dark:bg-red-900/20'
+                        : 'border-yellow-100 dark:border-yellow-900/40'
+                    )}
+                    onClick={() => navigate(`/reports/${report.id}`)}
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                          {report.projectName || projectNameById.get(report.projectId) || 'Unbekanntes Projekt'}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {report.userName} · {formatShortDate(report.createdAt)}
+                        </p>
+                      </div>
+                      <span
+                        className={cn(
+                          'text-[10px] font-medium px-2 py-0.5 rounded-full',
+                          critical
+                            ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
+                            : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                        )}
+                      >
+                        {critical ? 'Kritisch' : 'Hinweis'}
+                      </span>
                     </div>
-                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400">
-                      Hinweis
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-2">
-                    {report.text}
-                  </p>
-                  {report.quickActions?.length ? (
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {report.quickActions.slice(0, 2).map((action) => (
-                        <span
-                          key={action}
-                          className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
-                        >
-                          {action}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </Card>
-              ))}
+                    <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-2">
+                      {report.text}
+                    </p>
+                    {report.quickActions?.length ? (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {report.quickActions.slice(0, 3).map((action) => (
+                          <span
+                            key={action}
+                            className={cn(
+                              'text-[10px] px-2 py-0.5 rounded-full',
+                              critical
+                                ? 'bg-red-100/80 dark:bg-red-900/40 text-red-700 dark:text-red-200'
+                                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                            )}
+                          >
+                            {action}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>

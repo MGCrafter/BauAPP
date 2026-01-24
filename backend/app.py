@@ -13,7 +13,7 @@ from config import Config
 from db import get_db, init_db, ensure_upload_root, project_upload_dir
 from auth import token_required, create_token, require_admin
 from image_processing import save_images_for_report
-from pdf_export import build_project_pdf
+from pdf_export import build_project_pdf, build_report_pdf
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -282,6 +282,9 @@ def get_project(current_user_id: str, project_id: str):
             "quickActions": qas,
             "weather": r["weather"],
             "workersPresent": r["workers_present"],
+            "startTime": r["start_time"],
+            "endTime": r["end_time"],
+            "breakMinutes": r["break_minutes"],
             "createdAt": r["created_at"]
         })
 
@@ -514,6 +517,9 @@ def list_reports(current_user_id: str):
             "quickActions": qas,
             "weather": r["weather"],
             "workersPresent": r["workers_present"],
+            "startTime": r["start_time"],
+            "endTime": r["end_time"],
+            "breakMinutes": r["break_minutes"],
             "createdAt": r["created_at"]
         })
 
@@ -571,6 +577,9 @@ def get_report(current_user_id: str, report_id: str):
         "quickActions": qas,
         "weather": r["weather"],
         "workersPresent": r["workers_present"],
+        "startTime": r["start_time"],
+        "endTime": r["end_time"],
+        "breakMinutes": r["break_minutes"],
         "createdAt": r["created_at"]
     }
     conn.close()
@@ -579,21 +588,30 @@ def get_report(current_user_id: str, report_id: str):
 @app.post("/api/reports")
 @token_required
 def create_report(current_user_id: str):
-    project_id = request.form.get("projectId", "").strip()
-    text = (request.form.get("text", "") or "").strip()
-    quick_actions_raw = request.form.get("quickActions", "")
-    weather = request.form.get("weather")
-    workers_present = request.form.get("workersPresent")
-    images = request.files.getlist("images")
+    data = request.get_json(silent=True) if request.is_json else request.form
+    if data is None:
+        data = {}
+    project_id = (data.get("projectId") or "").strip()
+    text = (data.get("text") or "").strip()
+    quick_actions_raw = data.get("quickActions") or ""
+    weather = data.get("weather")
+    workers_present = data.get("workersPresent")
+    start_time = (data.get("startTime") or "").strip() or None
+    end_time = (data.get("endTime") or "").strip() or None
+    break_minutes = data.get("breakMinutes")
+    images = request.files.getlist("images") if not request.is_json else []
 
     qas_list = []
     if quick_actions_raw:
-        try:
-            qas_list = json.loads(quick_actions_raw)
-            if not isinstance(qas_list, list):
+        if isinstance(quick_actions_raw, list):
+            qas_list = quick_actions_raw
+        else:
+            try:
+                qas_list = json.loads(quick_actions_raw)
+                if not isinstance(qas_list, list):
+                    qas_list = []
+            except Exception:
                 qas_list = []
-        except Exception:
-            qas_list = []
 
     if not project_id or (not text and not qas_list):
         return jsonify({"error": "projectId und (text oder quickActions) sind erforderlich"}), 400
@@ -628,9 +646,28 @@ def create_report(current_user_id: str):
         except Exception:
             wp_int = None
 
+    break_int = None
+    if break_minutes is not None and str(break_minutes).strip() != "":
+        try:
+            break_int = int(break_minutes)
+        except Exception:
+            break_int = None
+
     conn.execute(
-        "INSERT INTO reports (id, project_id, user_id, text, quick_actions, weather, workers_present, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (report_id, project_id, current_user_id, text, json.dumps(qas_list, ensure_ascii=False), weather, wp_int, now)
+        "INSERT INTO reports (id, project_id, user_id, text, quick_actions, weather, workers_present, start_time, end_time, break_minutes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            report_id,
+            project_id,
+            current_user_id,
+            text,
+            json.dumps(qas_list, ensure_ascii=False),
+            weather,
+            wp_int,
+            start_time,
+            end_time,
+            break_int,
+            now,
+        )
     )
 
     upload_dir = project_upload_dir(app.config["UPLOAD_ROOT"], project_id)
@@ -655,6 +692,9 @@ def create_report(current_user_id: str):
         "quickActions": qas_list,
         "weather": weather,
         "workersPresent": wp_int,
+        "startTime": start_time,
+        "endTime": end_time,
+        "breakMinutes": break_int,
         "createdAt": now
     }), 201
 
@@ -705,6 +745,9 @@ def export_pdf(current_user_id: str, project_id: str):
             "created_at": r["created_at"],
             "user_name": r["full_name"] or r["user_name"],
             "quick_actions_list": qa,
+            "start_time": r["start_time"],
+            "end_time": r["end_time"],
+            "break_minutes": r["break_minutes"],
         })
 
     proj_dict = dict(project)
@@ -717,6 +760,61 @@ def export_pdf(current_user_id: str, project_id: str):
         mimetype="application/pdf",
         as_attachment=True,
         download_name=f"Projekt_{safe_name}.pdf"
+    )
+
+@app.get("/api/reports/<report_id>/export-pdf")
+@token_required
+def export_report_pdf(current_user_id: str, report_id: str):
+    if not require_admin(current_user_id):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+
+    conn = get_db(app.config["DB_FILE"])
+    report = conn.execute("""
+        SELECT r.*, u.username AS user_name, u.name AS full_name, p.name AS project_name, p.address AS project_address
+        FROM reports r
+        JOIN users u ON u.id = r.user_id
+        JOIN projects p ON p.id = r.project_id
+        WHERE r.id = ?
+    """, (report_id,)).fetchone()
+    if not report:
+        conn.close()
+        return jsonify({"error": "Bericht nicht gefunden"}), 404
+
+    imgs = conn.execute("SELECT file_path FROM report_images WHERE report_id = ?", (report_id,)).fetchall()
+    image_paths = []
+    for img in imgs:
+        p = img["file_path"]
+        full = os.path.join(BASE_DIR, p) if not os.path.isabs(p) else p
+        image_paths.append(full)
+
+    qa = []
+    if report["quick_actions"]:
+        try:
+            qa = json.loads(report["quick_actions"])
+        except Exception:
+            qa = []
+
+    report_dict = {
+        "id": report["id"],
+        "text": report["text"],
+        "created_at": report["created_at"],
+        "user_name": report["full_name"] or report["user_name"],
+        "quick_actions_list": qa,
+        "start_time": report["start_time"],
+        "end_time": report["end_time"],
+        "break_minutes": report["break_minutes"],
+    }
+    project_dict = {"name": report["project_name"], "address": report["project_address"]}
+
+    buffer = build_report_pdf(project_dict, report_dict, image_paths, logo_path=None)
+    conn.close()
+
+    safe_name = report["project_name"].replace(" ", "_")
+    return send_file(
+        buffer,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"Bericht_{safe_name}_{report_id}.pdf"
     )
 
 if __name__ == "__main__":

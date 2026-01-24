@@ -26,7 +26,7 @@ const NewReportPage: React.FC = () => {
   const { user } = useAuthStore();
   const { projects, loadProjectById, addReport, loadProjects } =
     useProjectStore();
-  const { addToast } = useUIStore();
+  const { addToast, addNotification } = useUIStore();
 
   const [selectedProjectId, setSelectedProjectId] = useState(projectId || '');
   const [text, setText] = useState('');
@@ -36,6 +36,9 @@ const NewReportPage: React.FC = () => {
   const [weather, setWeather] = useState('');
   const [temperature, setTemperature] = useState<number | ''>('');
   const [workersPresent, setWorkersPresent] = useState<number | ''>('');
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
+  const [breakMinutes, setBreakMinutes] = useState<number | ''>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
@@ -149,6 +152,22 @@ const NewReportPage: React.FC = () => {
     );
   };
 
+  const currentProject = projects.find((p) => p.id === selectedProjectId);
+  const calcHoursPreview = () => {
+    if (!startTime || !endTime) return '';
+    const [startH, startM] = startTime.split(':').map(Number);
+    const [endH, endM] = endTime.split(':').map(Number);
+    if (Number.isNaN(startH) || Number.isNaN(startM) || Number.isNaN(endH) || Number.isNaN(endM)) {
+      return '';
+    }
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
+    const pause = typeof breakMinutes === 'number' ? breakMinutes : 0;
+    const totalMinutes = Math.max(0, endMinutes - startMinutes - pause);
+    const hours = totalMinutes / 60;
+    return `${hours.toFixed(1)}h`;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -170,13 +189,21 @@ const NewReportPage: React.FC = () => {
         userId: user!.id,
         userName: user!.name,
         text: text.trim(),
-        images: imagePreviews, // In echtem Szenario würde hier der Upload passieren
+        images, // Files werden via FormData gesendet
         quickActions: selectedQuickActions,
         weather,
         workersPresent: workersPresent ? Number(workersPresent) : undefined,
+        startTime: startTime || undefined,
+        endTime: endTime || undefined,
+        breakMinutes: breakMinutes === '' ? undefined : Number(breakMinutes),
       });
 
       addToast({ message: 'Bericht erstellt!', type: 'success' });
+      addNotification({
+        title: 'Neuer Bericht',
+        message: `${user?.name || 'Ein Mitarbeiter'} hat einen Bericht für "${currentProject?.name || 'ein Projekt'}" erstellt`,
+        audience: 'admin',
+      });
       navigate(projectId ? `/projects/${projectId}` : '/projects');
     } catch (error) {
       addToast({ message: 'Fehler beim Erstellen', type: 'error' });
@@ -184,8 +211,6 @@ const NewReportPage: React.FC = () => {
       setIsSubmitting(false);
     }
   };
-
-  const currentProject = projects.find((p) => p.id === selectedProjectId);
 
   return (
     <div className="p-4 md:p-6 max-w-2xl mx-auto">
@@ -433,6 +458,56 @@ const NewReportPage: React.FC = () => {
                 />
               </div>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Zeiterfassung (optional)
+            </label>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Von
+                </label>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent min-h-[44px]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Bis
+                </label>
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent min-h-[44px]"
+                />
+              </div>
+            </div>
+            <div className="mt-3">
+              <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">
+                Pause (Minuten)
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={breakMinutes}
+                onChange={(e) =>
+                  setBreakMinutes(e.target.value ? parseInt(e.target.value) : '')
+                }
+                placeholder="0"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent min-h-[44px]"
+              />
+            </div>
+            {calcHoursPreview() && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                Gesamtzeit: {calcHoursPreview()}
+              </p>
+            )}
           </div>
         </div>
 

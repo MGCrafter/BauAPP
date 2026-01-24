@@ -16,6 +16,9 @@ export const mockReports: Report[] = [
     createdAt: '2024-01-19T16:30:00Z',
     weather: 'Sonnig, 8°C',
     workersPresent: 4,
+    startTime: '07:00',
+    endTime: '16:00',
+    breakMinutes: 30,
   },
   {
     id: 'rep-2',
@@ -61,6 +64,9 @@ export const mockReports: Report[] = [
     createdAt: '2024-01-18T14:00:00Z',
     weather: 'Bewölkt, 4°C',
     workersPresent: 3,
+    startTime: '07:30',
+    endTime: '15:30',
+    breakMinutes: 30,
   },
   {
     id: 'rep-5',
@@ -107,6 +113,9 @@ export const mockReports: Report[] = [
     createdAt: '2024-01-18T15:30:00Z',
     weather: 'Regen, 5°C',
     workersPresent: 6,
+    startTime: '06:45',
+    endTime: '15:15',
+    breakMinutes: 45,
   },
 ];
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Calendar,
@@ -14,48 +14,30 @@ import {
 import { Card, Button, Input, Badge, Modal } from '../components/ui';
 import { useAuthStore, useProjectStore, useUIStore } from '../store';
 import { cn } from '../utils/cn';
+import { mockReports } from '../mock/reports';
 
 interface TimeEntry {
   id: string;
   date: string;
   projectId: string;
   projectName: string;
-  startTime: string;
-  endTime: string;
-  breakMinutes: number;
+  startTime?: string;
+  endTime?: string;
+  breakMinutes?: number | null;
+  hours?: number;
   notes: string;
+  source: 'report' | 'manual';
 }
 
-// Mock data for demo
-const generateMockEntries = (): TimeEntry[] => [
-  {
-    id: '1',
-    date: new Date().toISOString().split('T')[0],
-    projectId: 'proj-1',
-    projectName: 'Einfamilienhaus Sonnenberg',
-    startTime: '07:00',
-    endTime: '16:00',
-    breakMinutes: 30,
-    notes: 'Fundament gegossen',
-  },
-  {
-    id: '2',
-    date: new Date(Date.now() - 86400000).toISOString().split('T')[0],
-    projectId: 'proj-2',
-    projectName: 'Dachsanierung Altbau',
-    startTime: '07:30',
-    endTime: '15:30',
-    breakMinutes: 30,
-    notes: 'Dachziegel verlegt',
-  },
-];
+const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
 
 const TimesheetPage: React.FC = () => {
-  const { user } = useAuthStore();
-  const { projects } = useProjectStore();
+  const { token, user } = useAuthStore();
+  const { projects, loadProjects } = useProjectStore();
   const { addToast } = useUIStore();
 
-  const [entries, setEntries] = useState<TimeEntry[]>(generateMockEntries());
+  const [reportEntries, setReportEntries] = useState<TimeEntry[]>([]);
+  const [manualEntries, setManualEntries] = useState<TimeEntry[]>([]);
   const [selectedWeek, setSelectedWeek] = useState(new Date());
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
@@ -64,11 +46,91 @@ const TimesheetPage: React.FC = () => {
   const [newEntry, setNewEntry] = useState({
     date: new Date().toISOString().split('T')[0],
     projectId: '',
-    startTime: '07:00',
-    endTime: '16:00',
-    breakMinutes: 30,
     notes: '',
   });
+
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
+
+  useEffect(() => {
+    const loadReports = async () => {
+      if (!token) {
+        const fallback = mockReports
+          .filter((report) =>
+            user?.role === 'worker' ? report.userId === user.id : true
+          )
+          .map((report) => ({
+            id: `report-${report.id}`,
+            date: report.createdAt.split('T')[0],
+            projectId: report.projectId,
+            projectName:
+              projects.find((p) => p.id === report.projectId)?.name || report.projectId,
+            startTime: report.startTime || '',
+            endTime: report.endTime || '',
+            breakMinutes: report.breakMinutes ?? null,
+            notes: report.text,
+            source: 'report' as const,
+          }));
+        setReportEntries(fallback);
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/api/reports`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json().catch(() => []);
+        const list = Array.isArray(data) ? data : mockReports;
+        const filtered = user?.role === 'worker'
+          ? list.filter((report) => report.userId === user.id)
+          : list;
+        const mapped = filtered.map((report) => ({
+          id: `report-${report.id}`,
+          date: report.createdAt.split('T')[0],
+          projectId: report.projectId,
+          projectName:
+            report.projectName ||
+            projects.find((p) => p.id === report.projectId)?.name ||
+            report.projectId,
+          startTime: report.startTime || '',
+          endTime: report.endTime || '',
+          breakMinutes: report.breakMinutes ?? null,
+          notes: report.text,
+          source: 'report' as const,
+        }));
+        setReportEntries(mapped);
+      } catch {
+        const fallback = mockReports
+          .filter((report) =>
+            user?.role === 'worker' ? report.userId === user.id : true
+          )
+          .map((report) => ({
+          id: `report-${report.id}`,
+          date: report.createdAt.split('T')[0],
+          projectId: report.projectId,
+          projectName:
+            projects.find((p) => p.id === report.projectId)?.name || report.projectId,
+          startTime: report.startTime || '',
+          endTime: report.endTime || '',
+          breakMinutes: report.breakMinutes ?? null,
+          notes: report.text,
+          source: 'report' as const,
+          }));
+        setReportEntries(fallback);
+      }
+    };
+
+    loadReports();
+  }, [token, projects, user]);
+
+  const entries = useMemo(
+    () =>
+      [...reportEntries, ...manualEntries].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      ),
+    [reportEntries, manualEntries]
+  );
 
   // Get week dates
   const getWeekDates = (date: Date) => {
@@ -90,14 +152,20 @@ const TimesheetPage: React.FC = () => {
 
   const weekDayNames = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
-  // Calculate hours for a time entry
   const calculateHours = (entry: TimeEntry): number => {
-    const [startH, startM] = entry.startTime.split(':').map(Number);
-    const [endH, endM] = entry.endTime.split(':').map(Number);
-    const startMinutes = startH * 60 + startM;
-    const endMinutes = endH * 60 + endM;
-    const totalMinutes = endMinutes - startMinutes - entry.breakMinutes;
-    return Math.max(0, totalMinutes / 60);
+    if (entry.startTime && entry.endTime) {
+      const [startH, startM] = entry.startTime.split(':').map(Number);
+      const [endH, endM] = entry.endTime.split(':').map(Number);
+      if (Number.isNaN(startH) || Number.isNaN(startM) || Number.isNaN(endH) || Number.isNaN(endM)) {
+        return entry.hours ?? 0;
+      }
+      const startMinutes = startH * 60 + startM;
+      const endMinutes = endH * 60 + endM;
+      const pause = entry.breakMinutes ?? 0;
+      const totalMinutes = endMinutes - startMinutes - pause;
+      return Math.max(0, totalMinutes / 60);
+    }
+    return entry.hours ?? 0;
   };
 
   // Get entries for a specific date
@@ -143,17 +211,15 @@ const TimesheetPage: React.FC = () => {
       id: `entry-${Date.now()}`,
       ...newEntry,
       projectName: project?.name || 'Unbekanntes Projekt',
+      source: 'manual',
     };
 
-    setEntries([...entries, entry]);
+    setManualEntries((prev) => [...prev, entry]);
     addToast({ message: 'Eintrag hinzugefügt', type: 'success' });
     setShowAddModal(false);
     setNewEntry({
       date: new Date().toISOString().split('T')[0],
       projectId: '',
-      startTime: '07:00',
-      endTime: '16:00',
-      breakMinutes: 30,
       notes: '',
     });
   };
@@ -162,14 +228,24 @@ const TimesheetPage: React.FC = () => {
   const handleSaveEdit = () => {
     if (!editingEntry) return;
 
-    setEntries(entries.map(e => e.id === editingEntry.id ? editingEntry : e));
+    if (editingEntry.source !== 'manual') {
+      addToast({ message: 'Report-Eintraege sind nicht editierbar', type: 'info' });
+      setEditingEntry(null);
+      return;
+    }
+    setManualEntries(manualEntries.map(e => e.id === editingEntry.id ? editingEntry : e));
     addToast({ message: 'Eintrag aktualisiert', type: 'success' });
     setEditingEntry(null);
   };
 
   // Handle delete entry
   const handleDeleteEntry = (id: string) => {
-    setEntries(entries.filter(e => e.id !== id));
+    const entry = manualEntries.find((e) => e.id === id);
+    if (!entry) {
+      addToast({ message: 'Report-Eintraege koennen nicht geloescht werden', type: 'info' });
+      return;
+    }
+    setManualEntries(manualEntries.filter(e => e.id !== id));
     addToast({ message: 'Eintrag gelöscht', type: 'success' });
   };
 
@@ -197,13 +273,16 @@ const TimesheetPage: React.FC = () => {
           <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
             {weeklyTotal.toFixed(1)} Stunden diese Woche
           </p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+            Zeit wird im Bericht erfasst (optional).
+          </p>
         </div>
         <Button
           onClick={() => setShowAddModal(true)}
           leftIcon={<Plus className="w-4 h-4" />}
           className="w-full sm:w-auto"
         >
-          Zeit erfassen
+          Eintrag hinzufügen
         </Button>
       </div>
 
@@ -322,11 +401,19 @@ const TimesheetPage: React.FC = () => {
                         </p>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
                           <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
-                            {entry.startTime} - {entry.endTime}
+                            {entry.startTime && entry.endTime
+                              ? `${entry.startTime} - ${entry.endTime}${
+                                  entry.breakMinutes != null ? ` · Pause ${entry.breakMinutes}m` : ''
+                                }`
+                              : calculateHours(entry) > 0
+                              ? `${calculateHours(entry).toFixed(1)}h`
+                              : 'Zeit im Bericht'}
                           </span>
-                          <Badge variant="success" size="sm">
-                            {calculateHours(entry).toFixed(1)}h
-                          </Badge>
+                          {calculateHours(entry) > 0 && (
+                            <Badge variant="success" size="sm">
+                              {calculateHours(entry).toFixed(1)}h
+                            </Badge>
+                          )}
                         </div>
                         {entry.notes && (
                           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
@@ -335,22 +422,24 @@ const TimesheetPage: React.FC = () => {
                         )}
                       </div>
 
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => setEditingEntry(entry)}
-                          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                          aria-label="Bearbeiten"
-                        >
-                          <Edit2 className="w-4 h-4 text-gray-400" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteEntry(entry.id)}
-                          className="p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-                          aria-label="Löschen"
-                        >
-                          <Trash2 className="w-4 h-4 text-red-400" />
-                        </button>
-                      </div>
+                      {entry.source === 'manual' && (
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => setEditingEntry(entry)}
+                            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                            aria-label="Bearbeiten"
+                          >
+                            <Edit2 className="w-4 h-4 text-gray-400" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteEntry(entry.id)}
+                            className="p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                            aria-label="Löschen"
+                          >
+                            <Trash2 className="w-4 h-4 text-red-400" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </Card>
                 </motion.div>
@@ -410,7 +499,7 @@ const TimesheetPage: React.FC = () => {
       <Modal
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
-        title="Zeit erfassen"
+        title="Eintrag hinzufügen"
       >
         <div className="space-y-4">
           <Input
@@ -437,29 +526,6 @@ const TimesheetPage: React.FC = () => {
               ))}
             </select>
           </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Input
-              label="Von"
-              type="time"
-              value={newEntry.startTime}
-              onChange={(e) => setNewEntry({ ...newEntry, startTime: e.target.value })}
-            />
-            <Input
-              label="Bis"
-              type="time"
-              value={newEntry.endTime}
-              onChange={(e) => setNewEntry({ ...newEntry, endTime: e.target.value })}
-            />
-          </div>
-
-          <Input
-            label="Pause (Minuten)"
-            type="number"
-            min="0"
-            value={newEntry.breakMinutes}
-            onChange={(e) => setNewEntry({ ...newEntry, breakMinutes: parseInt(e.target.value) || 0 })}
-          />
 
           <Input
             label="Notizen (optional)"
@@ -496,29 +562,6 @@ const TimesheetPage: React.FC = () => {
               type="date"
               value={editingEntry.date}
               onChange={(e) => setEditingEntry({ ...editingEntry, date: e.target.value })}
-            />
-
-            <div className="grid grid-cols-2 gap-3">
-              <Input
-                label="Von"
-                type="time"
-                value={editingEntry.startTime}
-                onChange={(e) => setEditingEntry({ ...editingEntry, startTime: e.target.value })}
-              />
-              <Input
-                label="Bis"
-                type="time"
-                value={editingEntry.endTime}
-                onChange={(e) => setEditingEntry({ ...editingEntry, endTime: e.target.value })}
-              />
-            </div>
-
-            <Input
-              label="Pause (Minuten)"
-              type="number"
-              min="0"
-              value={editingEntry.breakMinutes}
-              onChange={(e) => setEditingEntry({ ...editingEntry, breakMinutes: parseInt(e.target.value) || 0 })}
             />
 
             <Input

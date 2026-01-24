@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -7,15 +7,21 @@ import {
   FileText,
   Plus,
   ChevronRight,
+  Download,
 } from 'lucide-react';
 import { Card, Button, Badge, Spinner } from '../components/ui';
-import { useProjectStore } from '../store';
+import { useProjectStore, useAuthStore, useUIStore } from '../store';
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
 
 const ProjectDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { token, user } = useAuthStore();
+  const { addToast } = useUIStore();
   const { selectedProject, reports, loadProjectById, loadReports, isLoading } =
     useProjectStore();
+  const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -135,15 +141,52 @@ const ProjectDetailPage: React.FC = () => {
           </Card>
         )}
 
-        {/* New Report Button */}
-        <Button
-          className="w-full mb-6"
-          size="lg"
-          onClick={() => navigate(`/projects/${id}/new-report`)}
-          leftIcon={<Plus className="w-5 h-5" />}
-        >
-          Neuen Bericht erstellen
-        </Button>
+        {/* Actions */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+          <Button
+            className="w-full"
+            size="lg"
+            onClick={() => navigate(`/projects/${id}/new-report`)}
+            leftIcon={<Plus className="w-5 h-5" />}
+          >
+            Neuen Bericht erstellen
+          </Button>
+          <Button
+            variant="outline"
+            className="w-full"
+            size="lg"
+            leftIcon={<Download className="w-5 h-5" />}
+            isLoading={isDownloading}
+            disabled={user?.role !== 'admin'}
+            onClick={async () => {
+              if (!token || !id) return;
+              setIsDownloading(true);
+              try {
+                const response = await fetch(`${API_BASE}/api/projects/${id}/export-pdf`, {
+                  headers: { Authorization: `Bearer ${token}` },
+                });
+                if (!response.ok) {
+                  addToast({ message: 'PDF-Export fehlgeschlagen', type: 'error' });
+                  setIsDownloading(false);
+                  return;
+                }
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `Projekt_${selectedProject.name}.pdf`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
+              } finally {
+                setIsDownloading(false);
+              }
+            }}
+          >
+            Projekt-PDF
+          </Button>
+        </div>
 
         {/* Reports */}
         <div>
