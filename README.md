@@ -1,99 +1,76 @@
-# BauApp - Baustellen-Dokumentations-App
+# BauApp
 
-Eine Web-Anwendung zur Dokumentation von Baustellen mit Tagesberichten, Bildern und PDF-Export.
+**Baustellen-Dokumentations-App** - Eine moderne Web-Anwendung zur Dokumentation von Baustellen mit Tagesberichten, Bildern und PDF-Export.
+
+---
 
 ## Features
 
-- Projekte und Berichte verwalten
-- Bild-Upload und PDF-Export
-- JWT-Authentifizierung (inkl. Admin/Worker Rollen)
-- SQLite-Storage, Uploads unter `backend/uploads`
+- **Projektverwaltung** - Baustellen anlegen und verwalten
+- **Tagesberichte** - Dokumentation mit Text, Wetter und Arbeitszeiten
+- **Bild-Upload** - Fotos zu Berichten hinzufügen
+- **PDF-Export** - Berichte und Projekte als PDF exportieren
+- **Benutzerverwaltung** - Admin und Worker Rollen mit JWT-Authentifizierung
+- **Zeiterfassung** - Arbeitsstunden pro Mitarbeiter und Projekt
 
-## Technologie-Stack
+---
 
-- **Backend**: Python/Flask mit SQLite
-- **Frontend**: React + TypeScript + Vite + Tailwind CSS
-- **Deployment**: Docker + CapRover
+## Tech Stack
+
+| Bereich | Technologie |
+|---------|-------------|
+| **Backend** | Python, Flask, SQLite |
+| **Frontend** | React, TypeScript, Vite, Tailwind CSS |
+| **Deployment** | Docker, Docker Compose, CapRover |
+
+---
 
 ## Projektstruktur
 
 ```
-Test-BauAPP/
-├── backend/                 # Flask API Server
-│   ├── app.py              # Hauptanwendung
-│   ├── auth.py             # Authentifizierung
+BauAPP/
+├── backend/
+│   ├── app.py              # Flask API Server
+│   ├── auth.py             # JWT Authentifizierung
 │   ├── db.py               # Datenbankoperationen
-│   ├── image_processing.py # Bildverarbeitung
-│   ├── pdf_export.py       # PDF-Export
-│   ├── Dockerfile          # Container-Definition
-│   └── captain-definition  # CapRover-Konfiguration
-├── bauapp-frontend/         # React Frontend
-│   ├── src/                # Quellcode
-│   ├── Dockerfile          # Multi-stage Build
-│   ├── nginx.conf          # Nginx-Konfiguration
-│   └── captain-definition  # CapRover-Konfiguration
-├── docker-compose.yml       # Lokale Entwicklung & CapRover
-├── captain-definition       # CapRover Hauptkonfiguration
-└── .env.example            # Umgebungsvariablen-Vorlage
+│   ├── pdf_export.py       # PDF-Generierung
+│   ├── schema.sql          # Datenbankschema
+│   └── Dockerfile
+│
+├── bauapp-frontend/
+│   ├── src/
+│   │   ├── components/     # React Komponenten
+│   │   ├── pages/          # Seiten
+│   │   ├── store/          # Zustand (Zustand)
+│   │   └── types/          # TypeScript Typen
+│   ├── Dockerfile
+│   └── nginx.conf
+│
+├── docker-compose.yml
+└── .env.example
 ```
 
-## Voraussetzungen
+---
 
-- Python 3.x + `venv`
-- Node.js + npm
-- (Optional) Docker / Docker Compose fuer Container-Setup
+## Installation
 
-## Lokale Entwicklung
+### Voraussetzungen
 
-### Schnellstart (bestehende venv/node_modules)
+- Python 3.x
+- Node.js 18+
+- npm oder yarn
 
-```bash
-# Backend (ohne Debug-Server, kompatibel mit eingeschraenkten Umgebungen)
-cd backend
-./venv/bin/python -c "from app import app; app.run(host='0.0.0.0', port=5000, debug=False)"
-
-# Frontend
-cd ../bauapp-frontend
-npm run dev -- --host 127.0.0.1 --port 5173
-```
-
-Aufrufe:
-- Backend: http://127.0.0.1:5000
-- Frontend: http://127.0.0.1:5173
-
-Logs (wenn im Hintergrund gestartet):
-- `backend/backend.log`
-- `bauapp-frontend/frontend.log`
-
-### Konfiguration (Umgebungsvariablen)
-
-Backend:
-- `SECRET_KEY` (Pflicht in Produktion)
-- `DATABASE_PATH` (Standard: `backend/baustelle.db` lokal / `/app/data/baustelle.db` im Container)
-- `SOLO_MODE=1` (Dev-Shortcut fuer Admin ohne Token, nur localhost)
-- `SOLO_LOCAL_ONLY=1` (erzwingt localhost-only fuer `SOLO_MODE`)
-
-Frontend:
-- `VITE_API_URL` (z. B. `http://127.0.0.1:5000`)
-
-Vorlage fuer Deployment: `.env.example` im Root.
-
-### Default Logins (Dev)
-
-- `admin` / `admin123`
-- `worker` / `worker123`
-
-### Backend starten
+### Backend
 
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 python app.py
 ```
 
-### Frontend starten
+### Frontend
 
 ```bash
 cd bauapp-frontend
@@ -107,68 +84,85 @@ npm run dev
 docker-compose up --build
 ```
 
-## CapRover Deployment
+---
 
-### Option 1: Docker-Compose (empfohlen)
+## Konfiguration
 
-1. Erstelle eine neue App in CapRover mit Namen `bauapp`
-2. Aktiviere "Has Persistent Data"
-3. Deploy via Git oder Tarball mit der `captain-definition` im Root
+### Umgebungsvariablen
 
-### Option 2: Separate Apps
-
-#### Backend deployen
-
-```bash
-cd backend
-caprover deploy -a bauapp-backend
-```
-
-Konfiguration in CapRover:
-- Port: 5000
-- Persistent Data: `/app/uploads`, `/app/data`
-- Environment Variables:
-  - `SECRET_KEY`: Sicherer Schlüssel
-  - `DATABASE_PATH`: `/app/data/baustelle.db`
-
-#### Frontend deployen
-
-```bash
-cd bauapp-frontend
-caprover deploy -a bauapp-frontend
-```
-
-Konfiguration in CapRover:
-- Port: 80
-- Environment Variables:
-  - `BACKEND_URL`: `http://srv-captain--bauapp-backend:5000/`
-
-## API Endpunkte
-
-| Methode | Endpunkt | Beschreibung |
-|---------|----------|--------------|
-| POST | /api/auth/login | Benutzer-Login |
-| GET | /api/auth/me | Aktueller Benutzer |
-| GET | /api/projects | Alle Projekte |
-| GET | /api/projects/:id | Projekt-Details |
-| POST | /api/projects | Neues Projekt (admin) |
-| GET | /api/reports | Alle Berichte |
-| POST | /api/reports | Neuer Bericht |
-| GET | /api/projects/:id/export-pdf | PDF-Export (admin) |
-| GET | /api/reports/:id/export-pdf | Bericht-PDF (admin) |
-
-## Umgebungsvariablen
-
-Kopiere `.env.example` zu `.env` und passe die Werte an:
+Kopiere `.env.example` zu `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-## Troubleshooting
+| Variable | Beschreibung | Standard |
+|----------|--------------|----------|
+| `SECRET_KEY` | JWT Secret Key | - |
+| `DATABASE_PATH` | Pfad zur SQLite DB | `backend/baustelle.db` |
+| `VITE_API_URL` | Backend URL für Frontend | `http://127.0.0.1:5000` |
 
-- Debug-Server in eingeschraenkten Umgebungen: Starte Flask ohne Debug-Modus.
-- Port belegt: Passe `--port` bei Vite oder `app.run(..., port=...)` an.
+### Standard-Logins (Entwicklung)
+
+| Benutzer | Passwort | Rolle |
+|----------|----------|-------|
+| admin | admin123 | Admin |
+| worker | worker123 | Worker |
+
+---
+
+## API Endpunkte
+
+### Authentifizierung
+
+| Methode | Endpunkt | Beschreibung |
+|---------|----------|--------------|
+| POST | `/api/auth/login` | Login |
+| GET | `/api/auth/me` | Aktueller Benutzer |
+
+### Projekte
+
+| Methode | Endpunkt | Beschreibung |
+|---------|----------|--------------|
+| GET | `/api/projects` | Alle Projekte |
+| GET | `/api/projects/:id` | Projekt-Details |
+| POST | `/api/projects` | Neues Projekt |
+| GET | `/api/projects/:id/export-pdf` | PDF-Export |
+
+### Berichte
+
+| Methode | Endpunkt | Beschreibung |
+|---------|----------|--------------|
+| GET | `/api/reports` | Alle Berichte |
+| POST | `/api/reports` | Neuer Bericht |
+| GET | `/api/reports/:id/export-pdf` | Bericht-PDF |
+
+### Zeiterfassung
+
+| Methode | Endpunkt | Beschreibung |
+|---------|----------|--------------|
+| GET | `/api/timesheets` | Zeiteinträge |
+| POST | `/api/timesheets` | Neuer Eintrag |
+
+---
+
+## Deployment
+
+### CapRover
+
+1. Neue App erstellen: `bauapp`
+2. "Has Persistent Data" aktivieren
+3. Deploy via Git oder Tarball
+
+**Backend Konfiguration:**
+- Port: 5000
+- Persistent Data: `/app/uploads`, `/app/data`
+
+**Frontend Konfiguration:**
+- Port: 80
+- `BACKEND_URL`: `http://srv-captain--bauapp-backend:5000/`
+
+---
 
 ## Lizenz
 
